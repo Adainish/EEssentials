@@ -1,5 +1,6 @@
 package EEssentials.commands.teleportation;
 
+import EEssentials.EEssentials;
 import EEssentials.commands.AliasedCommand;
 import EEssentials.lang.LangManager;
 import EEssentials.settings.randomteleport.RTPSettings;
@@ -58,9 +59,24 @@ public class RTPCommand {
                                         if(!queuedPlayerNames.contains(player.getName().getString())) {
                                             LangManager.send(context.getSource(), "RTP-Queued-Message");
                                             queuedPlayerNames.add(player.getName().getString());
-                                            CompletableFuture<Void> rtp = teleportToRandomLocation(player, worldSettings);
-                                            rtp.whenComplete((location, throwable) ->
-                                                    queuedPlayerNames.remove(player.getName().getString()));
+                                            CompletableFuture<Location> rtp = getRandomLocation(worldSettings);
+                                            rtp.whenComplete((location, throwable) -> {
+                                                queuedPlayerNames.remove(player.getName().getString());
+                                                EEssentials.server.executeSync(() -> {
+                                                    Map<String, String> replacements = new HashMap<>();
+                                                    if (!player.isDisconnected()) {
+                                                        if (location != null) {
+                                                            location.addReplacements(replacements);
+                                                            location.teleport(player);
+                                                            LangManager.send(player, "RTP-Success-Message", replacements);
+                                                            worldSettings.startPlayerCooldown(player);
+                                                        } else {
+                                                            replacements.put("{attempts}", String.valueOf(RTPSettings.getMaxAttempts()));
+                                                            LangManager.send(player, "RTP-Location-Not-Found", replacements);
+                                                        }
+                                                    }
+                                                });
+                                            });
                                         } else {
                                             LangManager.send(context.getSource(), "RTP-Already-Queued-Message");
                                         }
@@ -90,9 +106,24 @@ public class RTPCommand {
                                                 if(!queuedPlayerNames.contains(player.getName().getString())) {
                                                     LangManager.send(context.getSource(), "RTP-Queued-Message");
                                                     queuedPlayerNames.add(player.getName().getString());
-                                                    CompletableFuture<Void> rtp = teleportToRandomLocation(player, worldSettings);
-                                                    rtp.whenComplete((location, throwable) ->
-                                                            queuedPlayerNames.remove(player.getName().getString()));
+                                                    CompletableFuture<Location> rtp = getRandomLocation(worldSettings);
+                                                    rtp.whenComplete((location, throwable) -> {
+                                                        queuedPlayerNames.remove(player.getName().getString());
+                                                        EEssentials.server.executeSync(() -> {
+                                                            Map<String, String> replacements = new HashMap<>();
+                                                            if (!player.isDisconnected()) {
+                                                                if (location != null) {
+                                                                    location.addReplacements(replacements);
+                                                                    location.teleport(player);
+                                                                    LangManager.send(player, "RTP-Success-Message", replacements);
+                                                                    worldSettings.startPlayerCooldown(player);
+                                                                } else {
+                                                                    replacements.put("{attempts}", String.valueOf(RTPSettings.getMaxAttempts()));
+                                                                    LangManager.send(player, "RTP-Location-Not-Found", replacements);
+                                                                }
+                                                            }
+                                                        });
+                                                    });
                                                 } else {
                                                     LangManager.send(context.getSource(), "RTP-Already-Queued-Message");
                                                 }
@@ -124,47 +155,30 @@ public class RTPCommand {
         return CommandSource.suggestMatching(RTPSettings.getAllWorlds(), builder);
     }
 
-    private static CompletableFuture<Void> teleportToRandomLocation(ServerPlayerEntity player, RTPWorldSettings worldSettings) {
+    private static CompletableFuture<Location> getRandomLocation(RTPWorldSettings settings) {
         return AsynchronousUtil.runTaskAsynchronously(() -> {
-            Location location = getRandomLocation(worldSettings);
-            Map<String, String> replacements = new HashMap<>();
-            if(!player.isDisconnected()) {
-                if (location != null) {
-                    location.addReplacements(replacements);
-                    location.teleport(player);
-                    LangManager.send(player, "RTP-Success-Message", replacements);
-                    worldSettings.startPlayerCooldown(player);
+            ServerWorld world = settings.getWorld();
+            if (world == null) return null;
+            for (int i = 0; i < RTPSettings.getMaxAttempts(); i++) {
+                int x = settings.getRandomIntInBounds();
+                int y;
+                int z = settings.getRandomIntInBounds();
+                if (settings.allowCaveTeleports()) {
+                    y = (int) TeleportUtil.findNextBelow(world, x, RandomHelper.randomIntBetween(-64, settings.getHighestY()), z);
                 } else {
-                    replacements.put("{attempts}", String.valueOf(RTPSettings.getMaxAttempts()));
-                    LangManager.send(player, "RTP-Location-Not-Found", replacements);
+                    y = (int) TeleportUtil.findNextBelowNoCaves(world, x, settings.getHighestY(), z);
+                }
+                if (y != -1000) {
+                    Optional<RegistryKey<Biome>> optionalBiome = world.getBiome(new BlockPos(x, y, z)).getKey();
+                    if (optionalBiome.isPresent()) {
+                        String biomeKey = optionalBiome.get().getValue().toString();
+                        if (!RTPSettings.isBiomeBlacklisted(biomeKey)) {
+                            return new Location(world, x, y, z);
+                        }
+                    }
                 }
             }
             return null;
         });
-    }
-
-    private static Location getRandomLocation(RTPWorldSettings settings) {
-        ServerWorld world = settings.getWorld();
-        if(world == null) return null;
-        for(int i = 0; i< RTPSettings.getMaxAttempts(); i++) {
-            int x = settings.getRandomIntInBounds();
-            int y;
-            int z = settings.getRandomIntInBounds();
-            if(settings.allowCaveTeleports()) {
-                y = (int) TeleportUtil.findNextBelow(world, x, RandomHelper.randomIntBetween(-64, settings.getHighestY()), z);
-            } else {
-                y = (int) TeleportUtil.findNextBelowNoCaves(world, x, settings.getHighestY(), z);
-            }
-            if(y != -1000) {
-                Optional<RegistryKey<Biome>> optionalBiome = world.getBiome(new BlockPos(x,y,z)).getKey();
-                if(optionalBiome.isPresent()) {
-                    String biomeKey = optionalBiome.get().getValue().toString();
-                    if (!RTPSettings.isBiomeBlacklisted(biomeKey)) {
-                        return new Location(world, x, y, z);
-                    }
-                }
-            }
-        }
-        return null;
     }
 }

@@ -26,8 +26,8 @@ public final class RTPWorldSettings {
 
     public int getRandomIntInBounds() {
         int position = RandomHelper.randomIntBetween(-this.maxDistance, this.maxDistance);
-        while(position > -this.minDistance && position < this.minDistance) {
-            position+=RandomHelper.randomIntBetween(-this.minDistance, this.minDistance);
+        while (position > -this.minDistance && position < this.minDistance) {
+            position += RandomHelper.randomIntBetween(-this.minDistance, this.minDistance);
         }
         return position;
     }

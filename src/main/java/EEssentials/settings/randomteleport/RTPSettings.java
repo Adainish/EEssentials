@@ -3,13 +3,11 @@ package EEssentials.settings.randomteleport;
 import EEssentials.config.Configuration;
 import net.minecraft.server.world.ServerWorld;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public abstract class RTPSettings {
     private static final Map<String, RTPWorldSettings> worldSettings = new HashMap<>();
+    private static final List<String> nonRedirectedWorlds = new ArrayList<>();
     private static int maxAttempts = 10;
     private static List<String> blacklistedBiomes;
     private static List<String> unsafeBlocks;
@@ -18,6 +16,7 @@ public abstract class RTPSettings {
     public static void reload(Configuration rtpConfig, Configuration mainConfig) {
         System.out.println("Reloading RTP settings...");
         worldSettings.clear();
+        nonRedirectedWorlds.clear();
         maxAttempts = rtpConfig.getInt("Random-Teleport.Max-Attempts", 10);
         System.out.println("Max Attempts: " + maxAttempts);
 
@@ -48,6 +47,7 @@ public abstract class RTPSettings {
             if (worldConfig != null) {
                 if (!worldConfig.contains("Redirect-To")) {
                     worldSettings.put(worldName, new RTPWorldSettings(worldName, worldConfig));
+                    nonRedirectedWorlds.add(worldName);
                     System.out.println("Loaded settings for world: " + worldName);
                 } else {
                     String redirectTo = worldConfig.getString("Redirect-To");
@@ -91,7 +91,7 @@ public abstract class RTPSettings {
         return blacklistedBiomes.contains(biomeKey);
     }
 
-    public static Set<String> getAllWorlds() {
-        return worldSettings.keySet();
+    public static List<String> getAllWorlds() {
+        return nonRedirectedWorlds;
     }
 }
