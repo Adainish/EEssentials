@@ -24,9 +24,9 @@ import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 public class SmiteCommand {
-    public static final String SMITE_PERMISSION_NODE = "";
-    public static final String SMITE_PLAYER_PERMISSION_NODE = "";
-    public static final String SMITE_ALL_PERMISSION_NODE = "";
+    public static final String SMITE_PERMISSION_NODE = "eessentials.smite";
+    public static final String SMITE_PLAYER_PERMISSION_NODE = "eessentials.smite.player";
+    public static final String SMITE_ALL_PERMISSION_NODE = "eessentials.smite.all";
 
     public static void register(CommandDispatcher<ServerCommandSource> dispatcher) {
         Map<String, String> replacements = new HashMap<>();
