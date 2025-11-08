@@ -10,9 +10,12 @@ import com.google.common.reflect.TypeToken;
 import com.google.gson.*;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+
 import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -106,12 +109,12 @@ public class PlayerStorage {
      */
     public File getSaveFile() {
         File file = EEssentials.storage.playerStorageDirectory.resolve(playerUUID.toString() + ".json").toFile();
-        try {
-            playedBefore = !file.createNewFile();
-        } catch (IOException e) {
-            EEssentials.LOGGER.error("Failed to create file for PlayerStorage /w UUID: " + playerUUID.toString());
-        }
+        playedBefore = file.exists();
         return file;
+    }
+
+    private Path getSavePath() {
+        return EEssentials.storage.playerStorageDirectory.resolve(playerUUID.toString() + ".json");
     }
 
     /**
@@ -184,7 +187,7 @@ public class PlayerStorage {
 
     /**
      * Save player data to storage asynchronously to avoid blocking the server thread.
-     * The actual write is performed on IO_EXECUTOR.
+     * Writes to a temporary file and then atomically replaces the real file to avoid truncation/corruption.
      */
     public void save() {
         // Capture snapshot of fields needed for serialization to avoid races
@@ -196,31 +199,60 @@ public class PlayerStorage {
         final Instant lastTimeOnlineSnapshot = lastTimeOnline;
         final Boolean socialSpyFlagSnapshot = socialSpyFlag;
         final List<String> modImportsSnapshot = new ArrayList<>(modImports);
-        final File saveFile = getSaveFile();
+        final Path savePath = getSavePath();
+        final Path tempPath = savePath.resolveSibling(savePath.getFileName().toString() + ".tmp");
         final Gson gson = createCustomGson();
 
         IO_EXECUTOR.submit(() -> {
-            try (Writer writer = new FileWriter(saveFile)) {
-                JsonObject jsonObject = new JsonObject();
-                jsonObject.addProperty("playerName", playerNameSnapshot);
-                jsonObject.add("homes", gson.toJsonTree(homesSnapshot));
-                jsonObject.add("previousLocation", gson.toJsonTree(previousLocationSnapshot));
-                jsonObject.add("logoutLocation", gson.toJsonTree(logoutLocationSnapshot));
-                jsonObject.addProperty("totalPlaytime", totalPlaytimeSnapshot);
-                jsonObject.add("lastTimeOnline", gson.toJsonTree(lastTimeOnlineSnapshot != null ? lastTimeOnlineSnapshot.toString() : Instant.now().toString()));
-                jsonObject.addProperty("socialSpyFlag", socialSpyFlagSnapshot);
-                jsonObject.add("modImports", gson.toJsonTree(modImportsSnapshot));
-                gson.toJson(jsonObject, writer);
+            try {
+                // Ensure directory exists
+                Files.createDirectories(savePath.getParent());
+
+                // Write JSON to temp file
+                try (BufferedWriter writer = Files.newBufferedWriter(tempPath, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                    JsonObject jsonObject = new JsonObject();
+                    jsonObject.addProperty("playerName", playerNameSnapshot);
+                    jsonObject.add("homes", gson.toJsonTree(homesSnapshot));
+                    jsonObject.add("previousLocation", gson.toJsonTree(previousLocationSnapshot));
+                    jsonObject.add("logoutLocation", gson.toJsonTree(logoutLocationSnapshot));
+                    jsonObject.addProperty("totalPlaytime", totalPlaytimeSnapshot);
+                    jsonObject.add("lastTimeOnline", gson.toJsonTree(lastTimeOnlineSnapshot != null ? lastTimeOnlineSnapshot.toString() : Instant.now().toString()));
+                    jsonObject.addProperty("socialSpyFlag", socialSpyFlagSnapshot);
+                    jsonObject.add("modImports", gson.toJsonTree(modImportsSnapshot));
+                    gson.toJson(jsonObject, writer);
+                }
+
+                // Atomically replace target with temp. If ATOMIC_MOVE unsupported, fallback to non-atomic replace.
+                try {
+                    Files.move(tempPath, savePath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(tempPath, savePath, StandardCopyOption.REPLACE_EXISTING);
+                }
+
+                // mark that a file exists now
+                playedBefore = true;
             } catch (IOException e) {
                 EEssentials.LOGGER.error("Failed to save data for UUID: " + playerUUID.toString(), e);
+                // Attempt to remove temp file if present
+                try {
+                    Files.deleteIfExists(tempPath);
+                } catch (IOException ignored) {
+                }
             }
         });
     }
 
     public void load() {
         Gson gson = createCustomGson();
+        File saveFile = getSaveFile();
 
-        try (Reader reader = new FileReader(getSaveFile())) {
+        // If file does not exist, treat as new player; will be created on save()
+        if (!saveFile.exists()) {
+            playedBefore = false;
+            return;
+        }
+
+        try (Reader reader = new FileReader(saveFile)) {
             JsonObject jsonObject = gson.fromJson(reader, JsonObject.class);
 
             // Check if jsonObject is null and if so, initialize it
@@ -293,10 +325,29 @@ public class PlayerStorage {
                 save();
             }
 
-        } catch (NullPointerException | IOException | JsonParseException e) {
-            EEssentials.LOGGER.info("Failed to load data from file: " + getSaveFile().getName());
+        } catch (JsonParseException | NullPointerException e) {
+            // Malformed JSON: back up corrupt file and start fresh
+            try {
+                Path path = saveFile.toPath();
+                Path corruptBackup = path.resolveSibling(path.getFileName().toString() + ".corrupt." + Instant.now().toEpochMilli());
+                Files.move(path, corruptBackup, StandardCopyOption.REPLACE_EXISTING);
+                EEssentials.LOGGER.warn("Corrupt player data detected for UUID " + playerUUID + ". Backed up to " + corruptBackup.getFileName());
+            } catch (IOException ex) {
+                EEssentials.LOGGER.warn("Failed to backup corrupt player data for UUID " + playerUUID, ex);
+            }
+            // Reset fields to defaults and schedule a save to recreate a clean file
+            playerName = playerName == null ? "Unknown" : playerName;
+            homes.clear();
+            previousLocation = null;
+            logoutLocation = null;
+            totalPlaytime = 0;
+            lastTimeOnline = Instant.now();
+            socialSpyFlag = false;
+            modImports.clear();
+            save();
+        } catch (IOException e) {
+            EEssentials.LOGGER.info("Failed to load data from file: " + saveFile.getName(), e);
         }
     }
 
 }
-
