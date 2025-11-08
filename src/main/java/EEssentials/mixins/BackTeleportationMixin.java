@@ -25,7 +25,6 @@ public abstract class BackTeleportationMixin {
             // Save the current position before the teleportation starts
             PlayerStorage storage = EEssentials.storage.getPlayerStorage(player);
             storage.setPreviousLocation(new Location(player.getServerWorld(), player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch()));
-            storage.save();
         }
     }
 }

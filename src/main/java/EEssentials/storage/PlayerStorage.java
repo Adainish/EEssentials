@@ -10,6 +10,7 @@ import com.google.common.reflect.TypeToken;
 import com.google.gson.*;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.*;
 import java.time.Instant;
@@ -17,6 +18,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 public class PlayerStorage {
 
@@ -41,6 +46,29 @@ public class PlayerStorage {
         this.playedBefore = false;
         this.lastTimeOnline = Instant.now();
         this.load();
+    }
+
+
+    // Single-threaded executor to serialize disk writes off the main server thread
+    private static final ExecutorService IO_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "EEssentials-IO-Thread");
+        t.setDaemon(true);
+        return t;
+    });
+
+    /**
+     * Call on server shutdown to allow executor to terminate cleanly.
+     */
+    public static void shutdownIOExecutor() {
+        IO_EXECUTOR.shutdown();
+        try {
+            if (!IO_EXECUTOR.awaitTermination(5, TimeUnit.SECONDS)) {
+                IO_EXECUTOR.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            IO_EXECUTOR.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
 
@@ -140,6 +168,7 @@ public class PlayerStorage {
         this.totalPlaytime = totalPlaytime;
         this.save();
     }
+
     public void setLastTimeOnline() {
         this.lastTimeOnline = Instant.now();
         this.save();
@@ -149,28 +178,43 @@ public class PlayerStorage {
         return this.lastTimeOnline;
     }
 
-    public Boolean getSocialSpyFlag(){ return this.socialSpyFlag; }
+    public Boolean getSocialSpyFlag() {
+        return this.socialSpyFlag;
+    }
 
     /**
-     * Save player data to storage.
+     * Save player data to storage asynchronously to avoid blocking the server thread.
+     * The actual write is performed on IO_EXECUTOR.
      */
     public void save() {
-        Gson gson = createCustomGson();
+        // Capture snapshot of fields needed for serialization to avoid races
+        final String playerNameSnapshot = playerName;
+        final HashMap<String, Location> homesSnapshot = new HashMap<>(homes);
+        final Location previousLocationSnapshot = previousLocation;
+        final Location logoutLocationSnapshot = logoutLocation;
+        final int totalPlaytimeSnapshot = totalPlaytime;
+        final Instant lastTimeOnlineSnapshot = lastTimeOnline;
+        final Boolean socialSpyFlagSnapshot = socialSpyFlag;
+        final List<String> modImportsSnapshot = new ArrayList<>(modImports);
+        final File saveFile = getSaveFile();
+        final Gson gson = createCustomGson();
 
-        try (Writer writer = new FileWriter(getSaveFile())) {
-            JsonObject jsonObject = new JsonObject();
-            jsonObject.addProperty("playerName", playerName);  // Save the player name
-            jsonObject.add("homes", gson.toJsonTree(homes));
-            jsonObject.add("previousLocation", gson.toJsonTree(previousLocation));
-            jsonObject.add("logoutLocation", gson.toJsonTree(logoutLocation));
-            jsonObject.addProperty("totalPlaytime", totalPlaytime);
-            jsonObject.add("lastTimeOnline", gson.toJsonTree(lastTimeOnline.toString()));
-            jsonObject.addProperty("socialSpyFlag", socialSpyFlag);
-            jsonObject.add("modImports", gson.toJsonTree(modImports));
-            gson.toJson(jsonObject, writer);
-        } catch (IOException e) {
-            EEssentials.LOGGER.error("Failed to save data for UUID: " + playerUUID.toString(), e);
-        }
+        IO_EXECUTOR.submit(() -> {
+            try (Writer writer = new FileWriter(saveFile)) {
+                JsonObject jsonObject = new JsonObject();
+                jsonObject.addProperty("playerName", playerNameSnapshot);
+                jsonObject.add("homes", gson.toJsonTree(homesSnapshot));
+                jsonObject.add("previousLocation", gson.toJsonTree(previousLocationSnapshot));
+                jsonObject.add("logoutLocation", gson.toJsonTree(logoutLocationSnapshot));
+                jsonObject.addProperty("totalPlaytime", totalPlaytimeSnapshot);
+                jsonObject.add("lastTimeOnline", gson.toJsonTree(lastTimeOnlineSnapshot != null ? lastTimeOnlineSnapshot.toString() : Instant.now().toString()));
+                jsonObject.addProperty("socialSpyFlag", socialSpyFlagSnapshot);
+                jsonObject.add("modImports", gson.toJsonTree(modImportsSnapshot));
+                gson.toJson(jsonObject, writer);
+            } catch (IOException e) {
+                EEssentials.LOGGER.error("Failed to save data for UUID: " + playerUUID.toString(), e);
+            }
+        });
     }
 
     public void load() {
@@ -196,7 +240,8 @@ public class PlayerStorage {
 
             // Load homes data if available
             if (jsonObject.has("homes")) {
-                HashMap<String, Location> loadedHomes = gson.fromJson(jsonObject.get("homes"), new TypeToken<HashMap<String, Location>>() {}.getType());
+                HashMap<String, Location> loadedHomes = gson.fromJson(jsonObject.get("homes"), new TypeToken<HashMap<String, Location>>() {
+                }.getType());
                 if (loadedHomes != null) {
                     homes.clear();
                     homes.putAll(loadedHomes);
@@ -240,7 +285,8 @@ public class PlayerStorage {
             // Track MODIDs of mods that we've already imported data from for this player
             if (jsonObject.has("modImports")) {
                 modImports.clear();
-                modImports = gson.fromJson(jsonObject.get("modImports"), new TypeToken<ArrayList<String>>() {}.getType());
+                modImports = gson.fromJson(jsonObject.get("modImports"), new TypeToken<ArrayList<String>>() {
+                }.getType());
             }
 
             if (requiresSave) {

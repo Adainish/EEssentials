@@ -94,6 +94,9 @@ public class EEssentials implements ModInitializer {
         // Execute tasks and listeners that should run when the server starts.
         registerServerStartListeners();
 
+        // Execute tasks and listeners that should run when the server stops.
+        registerServerStopListeners();
+
         // Register tick listeners to perform periodic checks or actions.
         registerTickListeners();
 
@@ -293,6 +296,13 @@ public class EEssentials implements ModInitializer {
 
             // Shutdown the scheduler after the task is completed
             scheduler.shutdown();
+        });
+    }
+
+    private void registerServerStopListeners() {
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            // Perform any necessary cleanup or saving operations here
+            PlayerStorage.shutdownIOExecutor();
         });
     }
 
