@@ -24,7 +24,7 @@ public class LocationManager {
     public Location serverSpawn = null;
 
     // A map storing all warp points, mapped by their name
-    public Map<String, Location> warps = new HashMap<>();
+    public Map<String, Location> warps = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     // A list that stores Mod IDs for mods that have had their data imported
     public List<String> modImports = new ArrayList<>();
