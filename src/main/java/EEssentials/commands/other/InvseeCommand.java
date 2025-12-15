@@ -13,6 +13,7 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 public class InvseeCommand {
 
@@ -44,8 +45,12 @@ public class InvseeCommand {
 
         boolean canEdit = Permissions.check(player, INVSEE_EDIT_PERMISSION_NODE, 2);
 
-        InventoryScreen gui = new InventoryScreen(ScreenHandlerType.GENERIC_9X5, player, targetPlayer);
-        gui.setTitle(Text.literal(targetPlayer.getName().getString() + "'s Inventory"));
+        InventoryScreen gui = new InventoryScreen(ScreenHandlerType.GENERIC_9X6, player, targetPlayer);
+        gui.setTitle(
+                Text.literal("\uE001\uE000\uE002")
+                        .styled(style -> style.withColor(Formatting.WHITE)) // enforce white colour
+                        .append(Text.literal(targetPlayer.getName().getString() + "'s Inventory").styled(style -> style.withColor(Formatting.DARK_GRAY)))
+        );
         gui.setEditMode(canEdit);
         gui.open();
 

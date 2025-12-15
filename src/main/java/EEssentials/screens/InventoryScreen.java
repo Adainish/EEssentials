@@ -25,16 +25,16 @@ public class InventoryScreen extends SimpleGui {
             int slotIndex = 39 - i; // Armor slots are 36-39
             this.setSlotRedirect(i, canEdit ? new Slot(targetPlayer.getInventory(), slotIndex, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), slotIndex));
         }
-        this.setSlotRedirect(4, canEdit ? new Slot(targetPlayer.getInventory(), 40, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), 40)); // Offhand slot is 40
+        this.setSlotRedirect(5, canEdit ? new Slot(targetPlayer.getInventory(), 40, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), 40)); // Offhand slot is 40
 
         // Add the main inventory slots
         for (int i = 9; i < 36; i++) {
-            this.setSlotRedirect(i, canEdit ? new Slot(targetPlayer.getInventory(), i, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), i));
+            this.setSlotRedirect(i + 9, canEdit ? new Slot(targetPlayer.getInventory(), i, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), i));
         }
 
         // Add the hotbar slots
         for (int i = 0; i < 9; i++) {
-            this.setSlotRedirect(36 + i, canEdit ? new Slot(targetPlayer.getInventory(), i, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), i));
+            this.setSlotRedirect(45 + i, canEdit ? new Slot(targetPlayer.getInventory(), i, 0, 0) : new ViewOnlySlot(targetPlayer.getInventory(), i));
         }
     }
 
