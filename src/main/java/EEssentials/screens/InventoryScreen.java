@@ -9,9 +9,12 @@ import net.minecraft.screen.slot.Slot;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.server.network.ServerPlayerEntity;
 
+import java.util.function.Consumer;
+
 public class InventoryScreen extends SimpleGui {
     private final ServerPlayerEntity targetPlayer;
     private boolean canEdit = true;
+    private Consumer<Void> closeAction = (unused) -> {};
 
     public InventoryScreen(ScreenHandlerType<?> type, ServerPlayerEntity player, ServerPlayerEntity targetPlayer) {
         super(type, player, false);
@@ -55,7 +58,13 @@ public class InventoryScreen extends SimpleGui {
         }
     }
 
+    public void setCloseAction(Consumer<Void> closeAction) {
+        this.closeAction = closeAction;
+    }
+
     @Override
-    public void onClose() {}
+    public void onClose() {
+        closeAction.accept(null);
+    }
 
 }
